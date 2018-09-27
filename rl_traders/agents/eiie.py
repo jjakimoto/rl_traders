@@ -16,17 +16,22 @@ from ..memories import PortfolioVectorMemory
 class EIIEAgent(BaseAgent):
     def __init__(self, action_spec, state_spec=None,
                  processor=Processor(),
-                 is_debug=False, model_params=EIIE_CONFIG,
+                 model_params=EIIE_CONFIG,
                  lr_spec=LR_SPEC, scheduler_spec=SCHEDULER_SPEC,
                  memory_limit=100000, window_length=50,
                  batch_size=50, beta=5.0e-5, device='cpu', log_dir='./logs',
-                 log_hist_freq=None, *args, **kwargs):
+                 log_hist_freq=None, is_notebook=False,
+                 is_debug=False, *args, **kwargs):
         super(EIIEAgent, self).__init__(action_spec=action_spec,
                                         state_spec=state_spec,
                                         processor=processor,
-                                        is_debug=is_debug)
+                                        is_debug=is_debug,
+                                        is_notebook=is_notebook)
         cash_bias = torch.zeros((1,), dtype=torch.float)
         self.model = EIIEFeedForwarad(model_params, cash_bias)
+        if torch.cuda.is_available():
+            print("Use GPU!")
+            self.model = self.model.to(device)
         self.memory = PortfolioVectorMemory(memory_limit, window_length,
                                             beta=beta, *args, **kwargs)
         self.optimizer, self.scheduler = get_optimizer(self.model.parameters(),
@@ -82,7 +87,7 @@ class EIIEAgent(BaseAgent):
                 self.record(loss.item(), actions_np, i, training=True)
         self.record(np.mean(losses), actions_np, step, training=False)
 
-    def record(self, loss, actions, idx, training=True):
+    def record(self, loss, actions, idx, pv=None, training=True):
         lr = self.optimizer.param_groups[0]['lr']
         if training:
             name = 'training'
@@ -124,3 +129,6 @@ class EIIEAgent(BaseAgent):
     def update_portfolio_vector(self, action, idx):
         """Update action memory for Portfolio Vector Memory"""
         self.memory.update_portfolio_vector(action, idx)
+
+    def record_performances(self, performances, idx):
+        self.writer.add_scalar(f'data/portfolio_value', performances['value'], idx)
